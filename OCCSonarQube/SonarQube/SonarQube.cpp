@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <map>
 #include <string>
+#include <shellapi.h>
 
 
 class SonarQubeExport : public Plugin::IExportPlugin
@@ -60,7 +61,11 @@ public:
 		std::wstring covered;
 		for ( const auto &file_iter : coverage )
 		{
-			ofs << L"  <file path=\"" << file_iter.first << L"\">" << std::endl;
+			std::wstring fileExtension = GetFileExtension(file_iter.first);
+			std::wstring filePath = GetActualFilePathFromDisplay(file_iter.first);
+			if (filePath.find(fileExtension) == std::wstring::npos) filePath += fileExtension;
+
+			ofs << L"  <file path=\"" << filePath << L"\">" << std::endl;
 			for ( const auto &line_iter : file_iter.second )
 			{
 				covered = line_iter.second ? L"true" : L"false";
@@ -71,6 +76,52 @@ public:
 		ofs << L"</coverage>" << std::endl;
 
 		return output;
+	}
+
+	//------------------------------------------------------------------------
+	std::wstring GetActualFilePathFromDisplay(std::wstring path)
+	{
+		wchar_t buffer[MAX_PATH];
+		size_t pathLength = path.length();
+		path.copy(buffer, pathLength);
+		std::wstring actualPath;
+		const wchar_t backSlash = L'\\';
+
+		// capitalize drive letter in case of absolute path 
+		if (buffer[1] == L':') {
+			actualPath += towupper(buffer[0]);
+			actualPath += L':';
+		}
+
+		size_t currIndex = 3;
+		size_t lastIndex = currIndex;
+		while (currIndex < pathLength)
+		{
+			while (currIndex < pathLength && buffer[currIndex] != backSlash) ++currIndex;
+			actualPath += backSlash;
+			buffer[currIndex] = '\0';
+
+			SHFILEINFOW fileInfo = { 0 };
+			if (SHGetFileInfoW(buffer, 0, &fileInfo, sizeof(fileInfo), SHGFI_DISPLAYNAME)) 
+			{
+				actualPath += fileInfo.szDisplayName;
+			}
+			else
+			{
+				actualPath.append(buffer + lastIndex, currIndex - lastIndex); // in case path not found or doesn't exist
+			}
+
+			buffer[currIndex] = backSlash;
+			++currIndex;
+			lastIndex = currIndex;
+		}
+		return actualPath;
+	}
+
+	//------------------------------------------------------------------------
+	std::wstring GetFileExtension(std::wstring filePath)
+	{
+		return filePath.substr(filePath.find_last_of(L"."));
 	}
 
 	//-------------------------------------------------------------------------
